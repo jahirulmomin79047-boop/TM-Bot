@@ -1,0 +1,344 @@
+import sqlite3
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+)
+
+# =========================
+# CONFIG
+# =========================
+
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+
+COINS_PER_TAP = 1
+COINS_PER_USDT = 1000
+MIN_WITHDRAW_COINS = 1000
+
+# =========================
+# DATABASE
+# =========================
+
+db = sqlite3.connect("mining.db", check_same_thread=False)
+cursor = db.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    username TEXT,
+    coins INTEGER DEFAULT 0,
+    wallet TEXT DEFAULT ''
+)
+""")
+
+db.commit()
+
+# =========================
+# USER FUNCTIONS
+# =========================
+
+def create_user(user):
+    cursor.execute(
+        "INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)",
+        (user.id, user.username or "")
+    )
+    db.commit()
+
+
+def get_coins(user_id):
+    cursor.execute(
+        "SELECT coins FROM users WHERE user_id=?",
+        (user_id,)
+    )
+    row = cursor.fetchone()
+    return row[0] if row else 0
+
+
+def add_coins(user_id, amount):
+    cursor.execute(
+        "UPDATE users SET coins = coins + ? WHERE user_id=?",
+        (amount, user_id)
+    )
+    db.commit()
+
+
+def set_wallet(user_id, wallet):
+    cursor.execute(
+        "UPDATE users SET wallet=? WHERE user_id=?",
+        (wallet, user_id)
+    )
+    db.commit()
+
+
+def get_wallet(user_id):
+    cursor.execute(
+        "SELECT wallet FROM users WHERE user_id=?",
+        (user_id,)
+    )
+    row = cursor.fetchone()
+    return row[0] if row else ""
+
+
+# =========================
+# MAIN MENU
+# =========================
+
+def main_menu():
+    keyboard = [
+        [InlineKeyboardButton("⛏️ TAP TO MINE", callback_data="mine")],
+        [
+            InlineKeyboardButton("💰 Balance", callback_data="balance"),
+            InlineKeyboardButton("🏧 Withdraw", callback_data="withdraw"),
+        ],
+        [
+            InlineKeyboardButton("👥 Referral", callback_data="referral"),
+        ]
+    ]
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+# =========================
+# START
+# =========================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    user = update.effective_user
+    create_user(user)
+
+    coins = get_coins(user.id)
+    usdt = coins / COINS_PER_USDT
+
+    text = f"""
+🪙 *MINING BOT*
+
+⛏️ Tap the mining button to earn coins!
+
+💎 Coins: `{coins}`
+💵 USDT: `{usdt:.3f}`
+
+📌 Rate:
+`1000 Coins = 1 USDT`
+"""
+
+    await update.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=main_menu()
+    )
+
+
+# =========================
+# BUTTON HANDLER
+# =========================
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    user = query.from_user
+    create_user(user)
+
+    # -------------------------
+    # MINING
+    # -------------------------
+
+    if query.data == "mine":
+
+        add_coins(user.id, COINS_PER_TAP)
+
+        coins = get_coins(user.id)
+        usdt = coins / COINS_PER_USDT
+
+        text = f"""
+⛏️ *MINING ACTIVE*
+
+🪙 Coins: `{coins}`
+💵 USDT: `{usdt:.3f}`
+
+👆 Keep tapping to mine!
+"""
+
+        await query.edit_message_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=main_menu()
+        )
+
+    # -------------------------
+    # BALANCE
+    # -------------------------
+
+    elif query.data == "balance":
+
+        coins = get_coins(user.id)
+        usdt = coins / COINS_PER_USDT
+
+        wallet = get_wallet(user.id)
+
+        text = f"""
+💰 *YOUR BALANCE*
+
+🪙 Coins: `{coins}`
+💵 USDT: `{usdt:.3f}`
+
+🏦 Wallet:
+`{wallet if wallet else "Not added"}`
+"""
+
+        await query.edit_message_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=main_menu()
+        )
+
+    # -------------------------
+    # WITHDRAW
+    # -------------------------
+
+    elif query.data == "withdraw":
+
+        coins = get_coins(user.id)
+
+        if coins < MIN_WITHDRAW_COINS:
+
+            remaining = MIN_WITHDRAW_COINS - coins
+
+            text = f"""
+🏧 *WITHDRAW*
+
+❌ Minimum withdrawal:
+`1000 Coins`
+
+🪙 Your coins:
+`{coins}`
+
+⏳ More needed:
+`{remaining} Coins`
+"""
+
+        else:
+
+            wallet = get_wallet(user.id)
+
+            if not wallet:
+
+                text = """
+🏧 *WITHDRAW*
+
+✅ You are eligible for withdrawal.
+
+⚠️ Wallet address is not added yet.
+
+Send your USDT TRC20 wallet address using:
+
+`/wallet YOUR_ADDRESS`
+"""
+
+            else:
+
+                amount = coins / COINS_PER_USDT
+
+                text = f"""
+🏧 *WITHDRAW REQUEST*
+
+💵 Amount: `{amount:.3f} USDT`
+🪙 Coins: `{coins}`
+
+🏦 Wallet:
+`{wallet}`
+
+⚠️ Demo mode:
+The withdrawal request is recorded/displayed,
+but real USDT is NOT sent yet.
+"""
+
+        await query.edit_message_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=main_menu()
+        )
+
+    # -------------------------
+    # REFERRAL
+    # -------------------------
+
+    elif query.data == "referral":
+
+        bot = await context.bot.get_me()
+
+        link = f"https://t.me/{bot.username}?start={user.id}"
+
+        text = f"""
+👥 *REFERRAL*
+
+Invite your friends using your link:
+
+`{link}`
+
+🎁 Referral rewards can be added later.
+"""
+
+        await query.edit_message_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=main_menu()
+        )
+
+
+# =========================
+# WALLET COMMAND
+# =========================
+
+async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    user = update.effective_user
+    create_user(user)
+
+    if not context.args:
+
+        await update.message.reply_text(
+            "🏦 Please send your USDT TRC20 address.\n\n"
+            "Example:\n"
+            "/wallet YOUR_TRC20_ADDRESS"
+        )
+        return
+
+    address = context.args[0]
+
+    set_wallet(user.id, address)
+
+    await update.message.reply_text(
+        "✅ USDT TRC20 wallet saved successfully."
+    )
+
+
+# =========================
+# RUN BOT
+# =========================
+
+def main():
+
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.INFO
+    )
+
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("wallet", wallet))
+    app.add_handler(CallbackQueryHandler(button_handler))
+
+    print("🚀 Mining Bot Started!")
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
