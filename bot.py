@@ -100,10 +100,12 @@ def create_withdrawal(user_id, coins, usdt, wallet):
 
 def menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⛏️ TAP TO MINE", callback_data="mine")],
         [
-            InlineKeyboardButton("💰 Balance", callback_data="balance"),
-            InlineKeyboardButton("🏧 Withdraw", callback_data="withdraw"),
+            InlineKeyboardButton("🪙 Coins", callback_data="balance"),
+            InlineKeyboardButton("🏧 Withdrawal", callback_data="withdraw"),
+        ],
+        [
+            InlineKeyboardButton("⛏️ TAP TO MINE", callback_data="mine"),
         ],
         [
             InlineKeyboardButton("👥 Referral", callback_data="referral"),
