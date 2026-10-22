@@ -112,7 +112,7 @@ def menu():
     ])
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):    print("START COMMAND RECEIVED")
     user = update.effective_user
     create_user(user)
 
