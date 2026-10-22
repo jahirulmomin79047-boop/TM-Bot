@@ -166,7 +166,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):    print("S
 
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-   print("START COMMAND RECEIVED") 
     q = update.callback_query
     await q.answer()
 
